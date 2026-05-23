@@ -9,7 +9,7 @@ env:
   STORAGE_ACCOUNT_NAME: "examplestoraccount"
   CONTAINER_NAME: "postgres-backups"
 
-  POSTGRES_HOST: "example-psqlflexibleserver.postgres.database.azure.com"
+  POSTGRES_HOST: "example-psqlflexibleserver-dg61sq.postgres.database.azure.com"
   POSTGRES_PORT: "5432"
   POSTGRES_DATABASE: "exampledb"
   POSTGRES_USERNAME: "psqladmin"
