@@ -6,9 +6,8 @@ on:
 env:
   RESOURCE_GROUP_NAME: "AllResourcesmain"
 
-  STORAGE_ACCOUNT_NAME: "examplestoraccount"
-  CONTAINER_NAME: "postgres-backups"
-
+  STORAGE_ACCOUNT_NAME: "examplestoraccountgcqddq"
+  CONTAINER_NAME: "vhds"
   POSTGRES_HOST: "example-psqlflexibleserver-dg61sq.postgres.database.azure.com"
   POSTGRES_PORT: "5432"
   POSTGRES_DATABASE: "exampledb"
