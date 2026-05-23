@@ -7,7 +7,7 @@ env:
   RESOURCE_GROUP_NAME: "AllResourcesmain"
 
   STORAGE_ACCOUNT_NAME: "examplestoraccount"
-  CONTAINER_NAME: "vhds"
+  CONTAINER_NAME: "postgres-backups"
 
   POSTGRES_HOST: "example-psqlflexibleserver.postgres.database.azure.com"
   POSTGRES_PORT: "5432"
@@ -31,15 +31,29 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Install PostgreSQL Client and Zip
+      - name: Install Packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-client zip
 
-      - name: Generate Backup File Name
+          sudo apt-get install -y \
+            postgresql-client \
+            zip \
+            netcat-openbsd \
+            dnsutils
+
+      - name: Test DNS Resolution
+        run: |
+          nslookup ${{ env.POSTGRES_HOST }}
+
+      - name: Test PostgreSQL Port Connectivity
+        run: |
+          nc -zv ${{ env.POSTGRES_HOST }} 5432
+
+      - name: Generate Backup Name
         id: generate-backup
         run: |
           DATE=$(date +%Y%m%d%H%M%S)
+
           BACKUP_FILE="${{ env.POSTGRES_DATABASE }}-${DATE}.zip"
 
           echo "backup_file=$BACKUP_FILE" >> $GITHUB_OUTPUT
@@ -58,12 +72,13 @@ jobs:
             --dbname=${{ env.POSTGRES_DATABASE }} \
             --format=c \
             --verbose \
+            --no-owner \
+            --no-privileges \
             --file=backup/postgres-backup.dump
 
           zip -r postgres-backup.zip backup
 
       - name: Get Storage Account Key
-        id: storage-key
         run: |
           STORAGE_KEY=$(az storage account keys list \
             --resource-group "${{ env.RESOURCE_GROUP_NAME }}" \
@@ -73,7 +88,14 @@ jobs:
 
           echo "STORAGE_KEY=$STORAGE_KEY" >> $GITHUB_ENV
 
-      - name: Upload Backup to Azure Blob Storage
+      - name: Create Blob Container
+        run: |
+          az storage container create \
+            --name "${{ env.CONTAINER_NAME }}" \
+            --account-name "${{ env.STORAGE_ACCOUNT_NAME }}" \
+            --account-key "${{ env.STORAGE_KEY }}"
+
+      - name: Upload Backup to Blob Storage
         run: |
           az storage blob upload \
             --account-name "${{ env.STORAGE_ACCOUNT_NAME }}" \
@@ -83,7 +105,7 @@ jobs:
             --file postgres-backup.zip \
             --overwrite
 
-      - name: Upload Backup Artifact
+      - name: Upload Workflow Artifact
         uses: actions/upload-artifact@v4
         with:
           name: postgres-backup
@@ -111,7 +133,7 @@ jobs:
 
           echo "STORAGE_KEY=$STORAGE_KEY" >> $GITHUB_ENV
 
-      - name: Verify Backup Exists in Blob Storage
+      - name: Validate Blob Exists
         run: |
           az storage blob exists \
             --account-name "${{ env.STORAGE_ACCOUNT_NAME }}" \
@@ -129,10 +151,10 @@ jobs:
       name: production
 
     steps:
-      - name: Await Manual Approval
+      - name: Await Approval
         run: |
-          echo "Backup validation completed successfully."
-          echo "Waiting for manual approval before Terraform destroy."
+          echo "Backup completed successfully."
+          echo "Waiting for manual approval."
 
   terraform-destroy:
     name: Terraform Destroy
@@ -141,6 +163,21 @@ jobs:
     needs: approval
 
     steps:
-      - name: testing
-        run: echo "Terraform destroy would be executed here after approval."
-      
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: |
+          terraform init
+
+      - name: Terraform Destroy
+        run: |
+          terraform destroy -auto-approve
