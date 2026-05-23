@@ -158,7 +158,7 @@ jobs:
 
   terraform-destroy:
     name: Terraform Destroy
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     needs: approval
 
