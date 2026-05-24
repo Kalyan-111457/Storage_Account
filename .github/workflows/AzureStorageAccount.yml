@@ -1,4 +1,4 @@
-name : Azure PostgreSQL Backup and Safe Terraform Destroy
+name: Azure PostgreSQL Backup and Safe Terraform Destroy
 
 on:
   workflow_dispatch:
@@ -85,41 +85,52 @@ jobs:
 
       - name: Test DNS Resolution
         run: |
-          nslookup ${{github.event.inputs.postgres_host }}
+          nslookup ${{ github.event.inputs.postgres_host }}
 
       - name: Test PostgreSQL Port Connectivity
         run: |
-          nc -zv ${{ github.event.inputs.postgres_host }} 5432
-
+          nc -zv \
+            ${{ github.event.inputs.postgres_host }} \
+            ${{ github.event.inputs.postgres_port }}
 
       - name: Generate Backup Name
         id: generate-backup
         run: |
           DATE=$(date +%Y%m%d%H%M%S)
 
-          BACKUP_FILE="${{ env.POSTGRES_DATABASE }}-${DATE}.zip"
+          BACKUP_FILE="${{ github.event.inputs.postgres_database }}-${DATE}.dump.zip"
 
           echo "backup_file=$BACKUP_FILE" >> $GITHUB_OUTPUT
 
       - name: Create PostgreSQL Backup
         env:
-          POSTGRES_HOST: ${{ env.POSTGRES_HOST }}
-          POSTGRES_PORT: ${{ env.POSTGRES_PORT }}
-          POSTGRES_DATABASE: ${{ env.POSTGRES_DATABASE }}
-          POSTGRES_USERNAME: ${{ env.POSTGRES_USERNAME }}
+          POSTGRES_HOST: ${{ github.event.inputs.postgres_host }}
+          POSTGRES_PORT: ${{ github.event.inputs.postgres_port }}
+          POSTGRES_DATABASE: ${{ github.event.inputs.postgres_database }}
+          POSTGRES_USERNAME: ${{ github.event.inputs.postgres_username }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           PGSSLMODE: require
+
         run: |
           mkdir -p backup
-          pg_dump \
-            --host=${{ env.POSTGRES_HOST }} \
-            --port=${{ env.POSTGRES_PORT }} \
-            --username=${{ env.POSTGRES_USERNAME }} \
-            --dbname=${{ env.POSTGRES_DATABASE }} \
-            --format=custom \
-            --file=backup/${{ steps.generate-backup.outputs.backup_file }}
 
-          zip -r ${{ steps.generate-backup.outputs.backup_file }} backup
+          pg_dump \
+            --host=$POSTGRES_HOST \
+            --port=$POSTGRES_PORT \
+            --username=$POSTGRES_USERNAME \
+            --dbname=$POSTGRES_DATABASE \
+            --format=custom \
+            --verbose \
+            --file=backup/database.dump
+
+          zip -r \
+            ${{ steps.generate-backup.outputs.backup_file }} \
+            backup
+
+      - name: Verify Backup File
+        run: |
+          ls -lh
+          unzip -l ${{ steps.generate-backup.outputs.backup_file }}
 
       - name: Upload Backup Artifact
         uses: actions/upload-artifact@v4
@@ -128,36 +139,38 @@ jobs:
           path: ${{ steps.generate-backup.outputs.backup_file }}
           retention-days: 7
 
-
       - name: Upload Backup to Azure Storage
         uses: azure/cli@v1
         with:
           inlineScript: |
             az storage blob upload \
-              --account-name ${{ env.STORAGE_ACCOUNT_NAME }} \
-              --container-name ${{ env.CONTAINER_NAME }} \
+              --account-name ${{ github.event.inputs.storage_account_name }} \
+              --container-name ${{ github.event.inputs.container_name }} \
               --name ${{ steps.generate-backup.outputs.backup_file }} \
               --file ${{ steps.generate-backup.outputs.backup_file }} \
+              --overwrite true \
               --auth-mode login
 
+      - name: Verify Blob Upload
+        uses: azure/cli@v1
+        with:
+          inlineScript: |
+            az storage blob list \
+              --account-name ${{ github.event.inputs.storage_account_name }} \
+              --container-name ${{ github.event.inputs.container_name }} \
+              --auth-mode login \
+              --output table
+
   terraform-destroy:
-    name: Terraform Destroy 
+    name: Terraform Destroy
     runs-on: ubuntu-latest
     needs: backup-and-destroy
+
     steps:
-      - name: testing
-        run: echo "This is a placeholder for the Terraform Destroy job. It will only run after the backup job completes successfully."
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      
-
-
-    
-
-
-
-
-
-
-
-
-  
+      - name: Terraform Destroy Placeholder
+        run: |
+          echo "Backup completed successfully."
+          echo "Terraform destroy can start safely now."
