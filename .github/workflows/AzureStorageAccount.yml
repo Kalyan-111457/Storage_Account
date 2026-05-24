@@ -1,0 +1,163 @@
+name : Azure PostgreSQL Backup and Safe Terraform Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource_group_name:
+        description: 'Name of the Azure Resource Group'
+        required: true
+        default: 'AllResourcesmain'
+        type: choice
+        options:
+          - AllResourcesmain
+
+      storage_account_name:
+        description: 'Name of the Azure Storage Account'
+        required: true
+        default: 'examplestoraccountgcqddq'
+        type: choice
+        options:
+          - examplestoraccountgcqddq
+
+      container_name:
+        description: 'Name of the Azure Storage Container'
+        required: true
+        default: 'vhds'
+        type: choice
+        options:
+          - vhds
+
+      postgres_host:
+        description: 'Hostname of the Azure PostgreSQL Flexible Server'
+        required: true
+        default: 'example-psqlflexibleserver-dg61sq.postgres.database.azure.com'
+        type: choice
+        options:
+          - example-psqlflexibleserver-dg61sq.postgres.database.azure.com
+
+      postgres_port:
+        description: 'Port number for the Azure PostgreSQL Flexible Server'
+        required: true
+        default: '5432'
+
+      postgres_database:
+        description: 'Name of the PostgreSQL database to backup'
+        required: true
+        default: 'exampledb'
+        type: choice
+        options:
+          - exampledb
+
+      postgres_username:
+        description: 'Username for the PostgreSQL database'
+        required: true
+        default: 'psqladmin'
+        type: choice
+        options:
+          - psqladmin
+
+jobs:
+  backup-and-destroy:
+    name: Backup PostgreSQL Database
+    runs-on: ubuntu-latest
+
+    outputs:
+      backup_file: ${{ steps.generate-backup.outputs.backup_file }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Install Packages
+        run: |
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            postgresql-client \
+            zip \
+            netcat-openbsd \
+            dnsutils
+
+      - name: Test DNS Resolution
+        run: |
+          nslookup ${{ env.POSTGRES_HOST }}
+
+      - name: Test PostgreSQL Port Connectivity
+        run: |
+          nc -zv ${{ env.POSTGRES_HOST }} 5432
+
+
+      - name: Generate Backup Name
+        id: generate-backup
+        run: |
+          DATE=$(date +%Y%m%d%H%M%S)
+
+          BACKUP_FILE="${{ env.POSTGRES_DATABASE }}-${DATE}.zip"
+
+          echo "backup_file=$BACKUP_FILE" >> $GITHUB_OUTPUT
+
+      - name: Create PostgreSQL Backup
+        env:
+          POSTGRES_HOST: ${{ env.POSTGRES_HOST }}
+          POSTGRES_PORT: ${{ env.POSTGRES_PORT }}
+          POSTGRES_DATABASE: ${{ env.POSTGRES_DATABASE }}
+          POSTGRES_USERNAME: ${{ env.POSTGRES_USERNAME }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          PGSSLMODE: require
+        run: |
+          mkdir -p backup
+          pg_dump \
+            --host=${{ env.POSTGRES_HOST }} \
+            --port=${{ env.POSTGRES_PORT }} \
+            --username=${{ env.POSTGRES_USERNAME }} \
+            --dbname=${{ env.POSTGRES_DATABASE }} \
+            --format=custom \
+            --file=backup/${{ steps.generate-backup.outputs.backup_file }}
+
+          zip -r ${{ steps.generate-backup.outputs.backup_file }} backup
+
+      - name: Upload Backup Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-backup
+          path: ${{ steps.generate-backup.outputs.backup_file }}
+          retention-days: 7
+
+
+      - name: Upload Backup to Azure Storage
+        uses: azure/cli@v1
+        with:
+          inlineScript: |
+            az storage blob upload \
+              --account-name ${{ env.STORAGE_ACCOUNT_NAME }} \
+              --container-name ${{ env.CONTAINER_NAME }} \
+              --name ${{ steps.generate-backup.outputs.backup_file }} \
+              --file ${{ steps.generate-backup.outputs.backup_file }} \
+              --auth-mode login
+
+  terraform-destroy:
+    name: Terraform Destroy 
+    runs-on: ubuntu-latest
+    needs: backup-and-destroy
+    steps:
+      - name: testing
+        run: echo "This is a placeholder for the Terraform Destroy job. It will only run after the backup job completes successfully."
+
+      
+
+
+    
+
+
+
+
+
+
+
+
+  
