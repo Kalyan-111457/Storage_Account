@@ -36,12 +36,12 @@ on:
           - example-psqlflexibleserver-dg61sq.postgres.database.azure.com
 
       postgres_port:
-        description: 'Port number for the Azure PostgreSQL Flexible Server'
+        description: 'Port number for PostgreSQL'
         required: true
         default: '5432'
 
       postgres_database:
-        description: 'Name of the PostgreSQL database to backup'
+        description: 'PostgreSQL Database Name'
         required: true
         default: 'exampledb'
         type: choice
@@ -49,7 +49,7 @@ on:
           - exampledb
 
       postgres_username:
-        description: 'Username for the PostgreSQL database'
+        description: 'PostgreSQL Username'
         required: true
         default: 'psqladmin'
         type: choice
@@ -73,7 +73,7 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Install Packages
+      - name: Install Required Packages
         run: |
           sudo apt-get update
 
@@ -83,22 +83,22 @@ jobs:
             netcat-openbsd \
             dnsutils
 
-      - name: Test DNS Resolution
+      - name: Verify DNS Resolution
         run: |
           nslookup ${{ github.event.inputs.postgres_host }}
 
-      - name: Test PostgreSQL Port Connectivity
+      - name: Verify PostgreSQL Connectivity
         run: |
           nc -zv \
             ${{ github.event.inputs.postgres_host }} \
             ${{ github.event.inputs.postgres_port }}
 
-      - name: Generate Backup Name
+      - name: Generate Backup File Name
         id: generate-backup
         run: |
           DATE=$(date +%Y%m%d%H%M%S)
 
-          BACKUP_FILE="${{ github.event.inputs.postgres_database }}-${DATE}.dump.zip"
+          BACKUP_FILE="${{ github.event.inputs.postgres_database }}-${DATE}.zip"
 
           echo "backup_file=$BACKUP_FILE" >> $GITHUB_OUTPUT
 
@@ -108,7 +108,7 @@ jobs:
           POSTGRES_PORT: ${{ github.event.inputs.postgres_port }}
           POSTGRES_DATABASE: ${{ github.event.inputs.postgres_database }}
           POSTGRES_USERNAME: ${{ github.event.inputs.postgres_username }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          PGPASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           PGSSLMODE: require
 
         run: |
@@ -121,13 +121,14 @@ jobs:
             --dbname=$POSTGRES_DATABASE \
             --format=custom \
             --verbose \
+            --no-owner \
             --file=backup/database.dump
 
           zip -r \
             ${{ steps.generate-backup.outputs.backup_file }} \
             backup
 
-      - name: Verify Backup File
+      - name: Verify Backup ZIP
         run: |
           ls -lh
           unzip -l ${{ steps.generate-backup.outputs.backup_file }}
@@ -139,7 +140,7 @@ jobs:
           path: ${{ steps.generate-backup.outputs.backup_file }}
           retention-days: 7
 
-      - name: Upload Backup to Azure Storage
+      - name: Upload Backup to Azure Blob Storage
         uses: azure/cli@v1
         with:
           inlineScript: |
@@ -172,5 +173,5 @@ jobs:
 
       - name: Terraform Destroy Placeholder
         run: |
-          echo "Backup completed successfully."
-          echo "Terraform destroy can start safely now."
+          echo "PostgreSQL backup completed successfully."
+          echo "Terraform destroy can start safely."
