@@ -85,11 +85,11 @@ jobs:
 
       - name: Test DNS Resolution
         run: |
-          nslookup ${{ env.POSTGRES_HOST }}
+          nslookup ${{github.event.inputs.postgres_host }}
 
       - name: Test PostgreSQL Port Connectivity
         run: |
-          nc -zv ${{ env.POSTGRES_HOST }} 5432
+          nc -zv ${{ github.event.inputs.postgres_host }} 5432
 
 
       - name: Generate Backup Name
